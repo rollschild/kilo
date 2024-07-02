@@ -2,6 +2,11 @@
 
 ## Build & Run
 
+- `nix develop` to enable Nix env with all dependencies
+- `cmake . -B build`
+- `cmake --build build`
+- `./build/src/kilo` to run
+
 ## Dev Notes
 
 - by default the terminal starts in **canonical mode**, a.k.a. **cooked mode**
@@ -55,4 +60,36 @@
 - `CS8` - a bit mask, _not_ a flag
   - sets the character size (CS) to 8 bits per byte
 - `EAGAIN` - resource temporarily unavailable
-- `ioctl` - control device
+- In C, bitmasks generally specified in hex
+- use `J` command to [clear the screen](https://vt100.net/docs/vt100-ug/chapter3.html#ED)
+- [VT100 User Guide](https://vt100.net/docs/vt100-ug/chapter3.html)
+- If a tilde (`~`) is in a row - row is not part of the file and cannot contain any text
+- To get window size of terminal,
+  - `ioctl` - control device
+  - the `TIOCGWINSZ` request
+    - Terminal IOCtl Get WINdow SiZe
+  - from `<sys/ioctl.h>`
+- However, `ioctl()` is _not_ guaranteed to query the window size on all systems
+- Use `"\x1b[K"` to clear the line after the `"~"`, instead of clearing the entire screen
+- `snprintf()` - writes to the buffer string at most number of chars
+- How to move cursors around?
+  - keep track of cursor's x and y position
+  - move cursor to position stored in `E.cx` and `E.cy` in `editor_refresh_screen()`
+- Use `JKHL` to move cursors, like Vim
+- Pressing `Ctrl` with another key
+  - clears the 6th and 7th bits of the char presses with `Ctrl`
+- `Page up` & `Page down` keys
+  - `<esc>[5~` - `Page up`
+  - `<esc>[6~` - `Page down`
+- `Home` & `End` keys
+  - `Home` could be sent as:
+    - `<esc>[1~`
+    - `<esc>[7~`
+    - `<esc>[H`
+    - `<esc>OH`
+  - `End` could be sent as:
+    - `<esc>[4~`
+    - `<esc>[8~`
+    - `<esc>[F`
+    - `<esc>OF`
+- `Delete` key - `<esc>[3~`
