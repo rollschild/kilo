@@ -93,3 +93,21 @@
     - `<esc>[F`
     - `<esc>OF`
 - `Delete` key - `<esc>[3~`
+- Create a data type for storing a row of text in the editor
+- `getline()` - read lines from a file while how much memory is allocated is unknown
+  - takes care memory management for you
+  - returns length of the read line; `-1` if error
+- Strategy for vertical scrolling for long text
+  - check if cursor has moved _out of_ the visible window
+  - if so, adjust `E.rowoff` so that cursor is _just_ inside the visible window
+- We allow users to scroll one line/column pass the edge - allowing users to insert lines/characters
+- Rendering tabs
+  - we want to render tabs as multiple spaces
+  - **tab stop** - a column that's divisible by 8
+  - each tab must advance the cursor forward at least one column
+- `Page Up` & `Page Down` should scroll up/down an entire page
+- Status bar
+  - display file name & current row number
+  - **Select Graphic Rendition (SGR)**
+  - `ESC [ Ps ; . . . ; Ps m`
+- status message & timestamp
