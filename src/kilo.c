@@ -280,6 +280,25 @@ int editor_row_cx_to_rx(struct editor_row *row, int cx) {
     return rx;
 }
 
+/**
+ * Convert a `render` index into a `chars` index
+ */
+int editor_row_rx_to_cx(struct editor_row *row, int rx) {
+    int curr_rx = 0;
+    int cx;
+    for (cx = 0; cx < row->size; cx++) {
+        if (row->chars[cx] == '\t') {
+            curr_rx += (KILO_TAB_STOP - 1) - (curr_rx % KILO_TAB_STOP);
+        }
+        curr_rx++;
+        if (curr_rx > rx) {
+            return cx;
+        }
+    }
+
+    return cx;
+}
+
 void editor_update_row(struct editor_row *row) {
     int tabs = 0;
     int j;
@@ -514,6 +533,27 @@ void editor_save() {
     editor_set_status_message("Cannot save! I/O error: %s", strerror(errno));
 }
 
+void editor_find() {
+    char *query = editor_prompt("Search: %s (ESC to cancel)");
+    if (query == NULL) return;
+
+    int r;
+    for (r = 0; r < E.num_rows; r++) {
+        struct editor_row *row = &E.rows[r];
+        char *match = strstr(row->render, query);
+        if (match) {
+            E.cy = r;
+            E.cx = editor_row_rx_to_cx(row, match - row->render);
+            // scroll to bottom of the screen, so that on next refresh
+            // the matching line will be at top of the screen
+            E.rowoff = E.num_rows;
+            break;
+        }
+    }
+
+    free(query);
+}
+
 /*** append buffer ***/
 
 /**
@@ -670,6 +710,9 @@ void editor_process_keypress() {
             if (E.cy < E.num_rows) {
                 E.cx = E.rows[E.cy].size;
             }
+            break;
+        case CTRL_KEY('f'):
+            editor_find();
             break;
         case BACKSPACE:
         case CTRL_KEY('h'):
@@ -918,7 +961,8 @@ int main(int argc, char *argv[]) {
         editor_open(argv[1]);
     }
 
-    editor_set_status_message("HELP: Ctrl-S = save | Ctrl-Q = quit");
+    editor_set_status_message(
+        "HELP: Ctrl-F = find | Ctrl-S = save | Ctrl-Q = quit");
 
     // read 1 byte from stdin into c until no more bytes to read
     // read() returns number of bytes read; returns 0 if reached EOF
