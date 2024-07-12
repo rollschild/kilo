@@ -111,3 +111,13 @@
   - **Select Graphic Rendition (SGR)**
   - `ESC [ Ps ; . . . ; Ps m`
 - status message & timestamp
+- Originally, `Backspace` was mapped to `Ctrl-H` - control code `8`
+  - but now mapped to `127`
+  - `DEL` mapped to `<esc>[3~`
+- `<Ctrl-L>` - refresh screen in terminal programs
+- `O_TRUNC`
+  - truncates the file to zero length
+  - normally a file is overwritten by passing `O_TRUNC` to `open()`
+    - truncates the file completely
+    - then write data to it
+-
