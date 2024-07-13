@@ -76,7 +76,7 @@ struct editor_config E;
 
 void editor_set_status_message(const char *fmt, ...);
 void editor_refresh_screen();
-char *editor_prompt(char *prompt);
+char *editor_prompt(char *prompt, void (*callback)(char *, int));
 
 /*** util ***/
 
@@ -502,7 +502,7 @@ void editor_open(char *filename) {
 
 void editor_save() {
     if (E.filename == NULL) {
-        E.filename = editor_prompt("Save as: %s (ESC to cancel)");
+        E.filename = editor_prompt("Save as: %s (ESC to cancel)", NULL);
         if (E.filename == NULL) {
             editor_set_status_message("Save aborted!");
             return;
@@ -533,16 +533,44 @@ void editor_save() {
     editor_set_status_message("Cannot save! I/O error: %s", strerror(errno));
 }
 
-void editor_find() {
-    char *query = editor_prompt("Search: %s (ESC to cancel)");
-    if (query == NULL) return;
+/*** find ***/
 
+void editor_find_callback(char *query, int key) {
+    // these are row numbers
+    static int last_match = -1;
+    static int direction = 1;
+
+    if (key == '\r' || key == '\x1b') {
+        // if Enter or Esc
+        last_match = -1;
+        direction = 1;
+        return;
+    } else if (key == ARROW_RIGHT || key == ARROW_DOWN) {
+        direction = 1;
+    } else if (key == ARROW_LEFT || key == ARROW_UP) {
+        direction = -1;
+    } else {
+        last_match = -1;
+        direction = 1;
+    }
+
+    if (last_match == -1) {
+        direction = 1;  // search forward by default
+    }
+    int current = last_match;
     int r;
     for (r = 0; r < E.num_rows; r++) {
-        struct editor_row *row = &E.rows[r];
+        current += direction;  // forward or backward
+        if (current == -1) {
+            current = E.num_rows - 1;  // wrap around?
+        } else if (current == E.num_rows) {
+            current = 0;
+        }
+        struct editor_row *row = &E.rows[current];
         char *match = strstr(row->render, query);
         if (match) {
-            E.cy = r;
+            last_match = current;
+            E.cy = current;
             E.cx = editor_row_rx_to_cx(row, match - row->render);
             // scroll to bottom of the screen, so that on next refresh
             // the matching line will be at top of the screen
@@ -550,8 +578,27 @@ void editor_find() {
             break;
         }
     }
+}
 
-    free(query);
+void editor_find() {
+    int saved_cx = E.cx;
+    int saved_cy = E.cy;
+    int saved_coloff = E.coloff;
+    int saved_rowoff = E.rowoff;
+
+    char *prompt =
+        "Search: %s (<Enter> search | <ESC> cancel | ← ↑ backward | → ↓ "
+        "forward)";
+    char *query = editor_prompt(prompt, editor_find_callback);
+
+    if (query) {
+        free(query);
+    } else {
+        E.cx = saved_cx;
+        E.cy = saved_cy;
+        E.coloff = saved_coloff;
+        E.rowoff = saved_rowoff;
+    }
 }
 
 /*** append buffer ***/
@@ -586,7 +633,7 @@ void abuf_free(struct abuf *ab) { free(ab->buffer); }
  * after the prompt
  * @param propmt: a format string containing %s
  */
-char *editor_prompt(char *prompt) {
+char *editor_prompt(char *prompt, void (*callback)(char *, int)) {
     size_t buf_size = 128;
     char *buf = malloc(buf_size);
 
@@ -605,11 +652,17 @@ char *editor_prompt(char *prompt) {
         } else if (c == '\x1b') {
             // <Esc> cancels the input prompt
             editor_set_status_message("");
+            if (callback) {
+                callback(buf, c);
+            }
             free(buf);
             return NULL;
         } else if (c == '\r') {
             if (buf_len != 0) {
                 editor_set_status_message("");
+                if (callback) {
+                    callback(buf, c);
+                }
                 return buf;
             }
         } else if (!iscntrl(c) && c < 128) {
@@ -619,6 +672,9 @@ char *editor_prompt(char *prompt) {
             }
             buf[buf_len++] = c;
             buf[buf_len] = '\0';
+        }
+        if (callback) {
+            callback(buf, c);
         }
     }
 }
