@@ -120,4 +120,8 @@
   - normally a file is overwritten by passing `O_TRUNC` to `open()`
     - truncates the file completely
     - then write data to it
--
+- Syntax Highlighting
+  - now we have to feed the substring of `render` to print into `abuf_append()`
+  - but character-by-character
+- Filetype detection
+  - call `editor_select_syntax_highlight()` _whenever_/_wherever_ `filename` changes
