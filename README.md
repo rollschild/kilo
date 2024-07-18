@@ -1,5 +1,7 @@
 # kilo, the minimal text editor
 
+Project status: finished & fully working; probably will not receive further updates, except for bug fixes.
+
 ## Overview
 
 kilo is a minimal (1200 soc) yet somewhat full-featured text editor. It supports basic editing, (incremental) searching, creating new files, syntax highlighting, and many more.
