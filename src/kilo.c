@@ -50,6 +50,7 @@ enum EDITOR_KEY {
 enum EDITOR_HIGHLIGHT {
     HL_NORMAL = 0,
     HL_COMMENT,
+    HL_ML_COMMENT,  // multi-line comment
     HL_RESERVED_KEYWORD,
     HL_RESERVED_TYPE,
     HL_STRING,
@@ -66,15 +67,19 @@ struct editor_syntax {
     char **filematch;
     char **reserveds;
     char *singleline_comment_start;
+    char *multiline_comment_start;
+    char *multiline_comment_end;
     int flags;
 };
 
 struct editor_row {
+    int row_idx;  // the row's index within the file
     int size;
     int rsize;    // size of render
     char *chars;  // dynamically allocated
     char *render;
     unsigned char *hl;  // highlighting, array of enum EDITOR_HIGHLIGHT
+    int hl_open_comment;
 };
 
 // Global state of the editor
@@ -113,6 +118,8 @@ struct editor_syntax HLDB[] = {
         C_HL_extensions,
         C_HL_reserveds,
         "//",
+        "/*",
+        "*/",
         HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS,
     },
 };
@@ -331,12 +338,19 @@ void editor_update_syntax(struct editor_row *row) {
     char **reserveds = E.syntax->reserveds;
 
     char *scs = E.syntax->singleline_comment_start;
+    char *mcs = E.syntax->multiline_comment_start;
+    char *mce = E.syntax->multiline_comment_end;
     int scs_len = scs ? strlen(scs) : 0;
+    int mcs_len = mcs ? strlen(mcs) : 0;
+    int mce_len = mce ? strlen(mce) : 0;
 
     // beginning of a line is separator
     int prev_sep = 1;
 
     int in_string = 0;
+    // true if the previous row has unclosed multiline comment
+    int in_comment =
+        (row->row_idx > 0 && E.rows[row->row_idx - 1].hl_open_comment);
 
     int i = 0;
     // while loops allows us to consume multiple chars each iteration
@@ -346,10 +360,34 @@ void editor_update_syntax(struct editor_row *row) {
         // previous highlight type either a number or separator
         unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
 
-        if (scs_len && !in_string) {
+        if (scs_len && !in_string && !in_comment) {
             if (!strncmp(&row->render[i], scs, scs_len)) {
                 memset(&row->hl[i], HL_COMMENT, row->rsize - i);
                 break;
+            }
+        }
+
+        if (mcs_len && mce_len && !in_string) {
+            if (in_comment) {
+                row->hl[i] = HL_ML_COMMENT;
+                if (!strncmp(&row->render[i], mce, mce_len)) {
+                    // if at end of multiline comment
+                    memset(&row->hl[i], HL_ML_COMMENT, mce_len);
+                    i += mce_len;
+                    in_comment = 0;
+                    prev_sep = 1;
+                    continue;
+                } else {
+                    i++;
+                    continue;
+                }
+            } else if (!strncmp(&row->render[i], mcs, mcs_len)) {
+                // just entering multiline comment
+                // at the beginning of the multiline comment
+                memset(&row->hl[i], HL_ML_COMMENT, mcs_len);
+                i += mcs_len;
+                in_comment = 1;
+                continue;
             }
         }
 
@@ -420,10 +458,18 @@ void editor_update_syntax(struct editor_row *row) {
         prev_sep = is_separator(c);
         i++;
     }
+
+    // whether the row ended as an unclosed multiline comment or not
+    int changed = (row->hl_open_comment != in_comment);
+    row->hl_open_comment = in_comment;
+    if (changed && row->row_idx + 1 < E.num_rows) {
+        editor_update_syntax(&E.rows[row->row_idx + 1]);
+    }
 }
 
 int editor_syntax_to_color(int hl) {
     switch (hl) {
+        case HL_ML_COMMENT:
         case HL_COMMENT:
             return 36;  // cyan
         case HL_RESERVED_KEYWORD:
@@ -551,6 +597,7 @@ void editor_insert_row(int at_row, char *s, size_t len) {
     memmove(&E.rows[at_row + 1], &E.rows[at_row],
             sizeof(struct editor_row) * (E.num_rows - at_row));
 
+    E.rows[at_row].row_idx = at_row;
     E.rows[at_row].size = len;
     E.rows[at_row].chars = malloc(len + 1);
     memcpy(E.rows[at_row].chars, s, len);
@@ -559,6 +606,7 @@ void editor_insert_row(int at_row, char *s, size_t len) {
     E.rows[at_row].rsize = 0;
     E.rows[at_row].render = NULL;
     E.rows[at_row].hl = NULL;
+    E.rows[at_row].hl_open_comment = 0;
 
     editor_update_row(&E.rows[at_row]);
 
@@ -580,6 +628,9 @@ void editor_del_row(int at) {
     editor_free_row(&E.rows[at]);
     memmove(&E.rows[at], &E.rows[at + 1],
             sizeof(struct editor_row) * (E.num_rows - at - 1));
+    for (int j = at; j < E.num_rows - 1; j++) {
+        E.rows[j].row_idx--;
+    }
     E.num_rows--;
     E.dirty++;
 }
@@ -1118,7 +1169,23 @@ void editor_draw_rows(struct abuf *ab) {
             int curr_color = -1;  // default text color
             int j;
             for (j = 0; j < len; j++) {
-                if (hl[j] == HL_NORMAL) {
+                if (iscntrl(c[j])) {
+                    // if control character
+                    // translate into printable character (refer to ASCII table)
+                    char sym = (c[j] <= 26) ? '@' + c[j] : '?';
+                    abuf_append(ab, "\x1b[7m", 4);  // switch to inverted color
+                    abuf_append(ab, &sym, 1);
+                    // turn off inverted color
+                    // also turns off _ALL_ formatting
+                    abuf_append(ab, "\x1b[m", 3);
+
+                    if (curr_color != -1) {
+                        char buf[16];
+                        int c_len =
+                            snprintf(buf, sizeof(buf), "\x1b[%dm", curr_color);
+                        abuf_append(ab, buf, c_len);
+                    }
+                } else if (hl[j] == HL_NORMAL) {
                     if (curr_color != -1) {
                         // 39 is the default foreground color
                         abuf_append(ab, "\x1b[39m", 5);

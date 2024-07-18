@@ -5,7 +5,8 @@
 - `nix develop` to enable Nix env with all dependencies
 - `cmake . -B build`
 - `cmake --build build`
-- `./build/src/kilo` to run
+- `./build/src/kilo` to create and open a new file
+- `./build/src/kilo <existing-file>` to open an existing file
 
 ## Dev Notes
 
@@ -125,3 +126,7 @@
   - but character-by-character
 - Filetype detection
   - call `editor_select_syntax_highlight()` _whenever_/_wherever_ `filename` changes
+- the **audible bell character** - `7`
+- We need to translate nonprintable characters into printable ones
+  - we render them using inverted colors (black on white)
+-
